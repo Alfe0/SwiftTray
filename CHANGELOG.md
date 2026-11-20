@@ -12,3 +12,9 @@
 ## [0.18.8] — Brand polish preview
 
 - Tuned tray icon frames, About high-resolution icon path and brand colors.
+
+### Final UI polish (same v1.0.0)
+
+- The tray context menu now starts with "Open mixer" instead of repeating the application logo and name. The tray icon/hover tooltip are unchanged.
+- The About page uses a recognisable GitHub mark for "Open source"; its existing repository link is unchanged and the icon respects the active accent.
+- No audio engine, capture, hotkey, startup, or update-checker behavior changes.

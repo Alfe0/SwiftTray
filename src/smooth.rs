@@ -99,6 +99,27 @@ pub fn prepare_about_logo(pixels: &mut [u8]) -> isize {
     if result == 0 && !bitmap.is_null() { bitmap as isize } else { 0 }
 }
 
+// Original GitHub icon-shaped artwork, rendered once from the outline SVG
+// and embedded in the executable. It is a WHITE premultiplied-alpha mask so
+// the draw routine can preserve the user's Windows/SwiftTray accent color.
+const GITHUB_SIDE:usize = 64;
+const GITHUB_BYTES:&[u8;GITHUB_SIDE*GITHUB_SIDE*4] =
+    include_bytes!("../assets/GitHub-mark.pbgra");
+
+pub fn github_mark_pixels() -> Vec<u8> { GITHUB_BYTES.to_vec() }
+
+// Keep this Vec alive until the associated bitmap has been released: GDI+
+// may retain scan0 instead of copying the pixels.
+pub fn prepare_github_mark(pixels:&mut [u8]) -> isize {
+    const PIXEL_FORMAT_32BPP_PARGB:i32 = 0x000E200B;
+    if pixels.len()!=GITHUB_BYTES.len() {return 0;}
+    let mut bitmap:Gp=ptr::null_mut();
+    let status=unsafe {GdipCreateBitmapFromScan0(
+        GITHUB_SIDE as i32,GITHUB_SIDE as i32,(GITHUB_SIDE*4) as i32,
+        PIXEL_FORMAT_32BPP_PARGB,pixels.as_mut_ptr(),&mut bitmap)};
+    if status==0 && !bitmap.is_null() {bitmap as isize}else{0}
+}
+
 pub fn prepare_native_icon(hicon:isize) -> isize {
     if hicon==0 {return 0;}
     let mut image:Gp=ptr::null_mut();
@@ -159,6 +180,35 @@ impl SmoothCanvas {
             0,0,w as i32,h as i32,2,attributes,ptr::null(),ptr::null()) };
         if !attributes.is_null() { unsafe { GdipDisposeImageAttributes(attributes); } }
         status==0
+    }
+
+    /// Draw an embedded white-alpha icon tinted to the active accent color.
+    /// The color matrix scales R/G/B channels, preserving original alpha and
+    /// antialiasing. This avoids text-font-dependent GitHub glyphs.
+    pub fn tinted_icon(&self, image:isize, x:i32, y:i32, size:i32, color:u32)->bool {
+        if image==0 || size<=0 {return false;}
+        let red=(color & 0xff) as f32 / 255.0;
+        let green=((color >> 8) & 0xff) as f32 / 255.0;
+        let blue=((color >> 16) & 0xff) as f32 / 255.0;
+        let scale=[
+            red,0.,0.,0.,0.,
+            0.,green,0.,0.,0.,
+            0.,0.,blue,0.,0.,
+            0.,0.,0.,1.,0.,
+            0.,0.,0.,0.,1.,
+        ];
+        let mut attributes:Gp=ptr::null_mut();
+        if unsafe {GdipCreateImageAttributes(&mut attributes)}!=0 || attributes.is_null() {
+            return false;
+        }
+        let configured=unsafe {GdipSetImageAttributesColorMatrix(attributes,0,1,
+            scale.as_ptr(),ptr::null(),0)}==0;
+        let drawn=configured && unsafe {GdipDrawImageRectRectI(
+            self.graphics,image as Gp,x,y,size,size,
+            0,0,GITHUB_SIDE as i32,GITHUB_SIDE as i32,2,
+            attributes,ptr::null(),ptr::null())}==0;
+        unsafe {GdipDisposeImageAttributes(attributes);}
+        drawn
     }
 
     /// One GDI+ path/brush for the entire live meter. Shape count is bounded

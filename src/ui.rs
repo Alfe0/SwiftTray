@@ -29,6 +29,10 @@ const ABOUT_LOGO_TOP: i32 = 64;
 const ABOUT_LOGO_SIZE: i32 = 92;
 const ABOUT_FOOTER_RULE: i32 = 342;
 const TRAY_EXIT_OFFSET: i32 = 11;
+// The native tray icon already identifies the app; a second title inside
+// the context menu wasted vertical space.
+const TRAY_ROWS_TOP: i32 = 15;
+const TRAY_MENU_HEIGHT: i32 = TRAY_ROWS_TOP + 4*38 + TRAY_EXIT_OFFSET + 34 + 16;
 
 static mut APP: *mut App = ptr::null_mut();
 
@@ -64,7 +68,8 @@ struct App {
     toast_text:String, toast_symbol:String, capture_session:CaptureSession,
     status:String, hotkey_status:[bool;3], shortcut_errors:[Option<String>;3], hotkey_manager:HotkeyManager,
     tray_icon:H, tray_menu_icon:H, about_icon:H, tray_owned:bool,
-    tray_image:isize, about_image:isize, about_pixels:Vec<u8>, taskbar_created:u32, tray_choice:usize,
+    tray_image:isize, about_image:isize, about_pixels:Vec<u8>,
+    github_image:isize, github_pixels:Vec<u8>, taskbar_created:u32, tray_choice:usize,
     startup_on:bool, startup_error:String,
     update_status:UpdateStatus, update_receiver:Option<Receiver<Result<updates::ResultState,String>>>,
 }
@@ -80,7 +85,8 @@ impl App {
             toast_text:String::new(), toast_symbol:"\u{E767}".into(), capture_session:CaptureSession::new(),
             status:String::new(), hotkey_status:[false;3], shortcut_errors:[None,None,None], hotkey_manager:HotkeyManager::new(),
             tray_icon:0, tray_menu_icon:0, about_icon:0, tray_owned:false,
-            tray_image:0, about_image:0, about_pixels:Vec::new(), taskbar_created:0, tray_choice:0,
+            tray_image:0, about_image:0, about_pixels:Vec::new(),
+            github_image:0, github_pixels:Vec::new(), taskbar_created:0, tray_choice:0,
             startup_on:startup::is_enabled(), startup_error:String::new(),
             update_status:UpdateStatus::Idle, update_receiver:None }
     }
@@ -116,7 +122,7 @@ impl App {
             Page::Notifications => 304,
             Page::About => 394,
             Page::Welcome => 244,
-            Page::TrayMenu => 265,
+            Page::TrayMenu => TRAY_MENU_HEIGHT,
         }
     }
     fn resize(&mut self) {
@@ -1505,7 +1511,11 @@ fn draw_about(app:&mut App,c:&Canvas) {
     let source_hover=app.hover==Some(Action::OpenRepository);
     let source_color=if !repository_active {c.theme.dim}
         else if source_hover {on_hover} else {c.theme.accent};
-    c.symbol("\u{E8A7}",Rect::new(36,355,22,24),source_color);
+    // GitHub's recognisable cat silhouette (bundled vector-derived artwork),
+    // tinted using the active theme just like the previous external-link icon.
+    let github_drawn=c.smooth.as_ref().is_some_and(|g|
+        g.tinted_icon(app.github_image,c.s(36),c.s(356),c.s(22),source_color));
+    if !github_drawn { c.symbol("\u{E8A7}",Rect::new(36,355,22,24),source_color); }
     c.text("Open source",Rect::new(65,355,109,24),
         if !repository_active {c.theme.dim}
         else if source_hover {on_hover}else{c.theme.text},0,0);
@@ -1540,18 +1550,15 @@ fn draw_welcome(app:&mut App,c:&Canvas,_a:u32) {
 }
 
 fn draw_tray_menu(app:&mut App,c:&Canvas) {
-    // Compact, consistent menu using the app's original icon and the same
-    // 23-DIP Segoe Fluent symbol footprint for each action.
-    c.app_logo(app.tray_menu_icon,app.tray_image,18,12,25);
-    c.text("SwiftTray",Rect::new(54,11,163,29),c.theme.text,2,0);
-    c.line(17,46,196,c.theme.divider);
+    // Begin directly with actions; the Windows notification-area icon and its
+    // "SwiftTray" tooltip already identify the application.
     let choices=[("Open mixer","\u{E767}",Action::TrayOpen),
         ("Settings","\u{E713}",Action::TraySettings),
         ("Check for updates","\u{E895}",Action::TrayCheckUpdates),
         ("About","\u{E946}",Action::TrayAbout),
         ("Exit","\u{E7E8}",Action::TrayExit)];
     for (i,(label,glyph,action)) in choices.into_iter().enumerate() {
-        let y=52+i as i32*38 + if i==4 {TRAY_EXIT_OFFSET} else {0};
+        let y=TRAY_ROWS_TOP+i as i32*38 + if i==4 {TRAY_EXIT_OFFSET} else {0};
         if i==4 {c.line(17,y-7,196,c.theme.divider);}
         let hover=app.hover==Some(action) || (app.hover.is_none() && app.tray_choice==i);
         let row=Rect::new(10,y,210,34);
@@ -1963,6 +1970,8 @@ pub fn run() -> Result<(), String> {
     app.tray_image=smooth::prepare_native_icon(app.tray_menu_icon);
     app.about_pixels=smooth::about_logo_pixels();
     app.about_image=smooth::prepare_about_logo(&mut app.about_pixels);
+    app.github_pixels=smooth::github_mark_pixels();
+    app.github_image=smooth::prepare_github_mark(&mut app.github_pixels);
     if app.about_image==0 && app.about_icon!=0 {
         app.about_image=smooth::prepare_native_icon(app.about_icon);
     }
@@ -2008,6 +2017,7 @@ pub fn run() -> Result<(), String> {
         while GetMessageW(&mut msg,0,0,0)>0 {TranslateMessage(&msg);DispatchMessageW(&msg);}
         smooth::release_native_icon((*APP).tray_image);
         smooth::release_native_icon((*APP).about_image);
+        smooth::release_native_icon((*APP).github_image);
         if (*APP).tray_menu_icon!=0 && (*APP).tray_menu_icon!=(*APP).tray_icon {
             DestroyIcon((*APP).tray_menu_icon);
         }
@@ -2125,7 +2135,7 @@ mod v017_layout_tests {
 #[cfg(test)]
 mod about_and_tray_layout_tests {
     use super::{friendly_update_error, ABOUT_FOOTER_RULE, ABOUT_LOGO_SIZE,
-        ABOUT_LOGO_TOP, TRAY_EXIT_OFFSET};
+        ABOUT_LOGO_TOP, TRAY_EXIT_OFFSET, TRAY_ROWS_TOP, TRAY_MENU_HEIGHT};
 
     #[test]
     fn about_logo_stays_above_version_and_footer() {
@@ -2135,10 +2145,12 @@ mod about_and_tray_layout_tests {
     }
     #[test]
     fn exit_is_separated_without_overlapping_other_tray_rows() {
-        let about_bottom=52 + 3*38 + 34;
-        let exit_top=52 + 4*38 + TRAY_EXIT_OFFSET;
+        let about_bottom=TRAY_ROWS_TOP + 3*38 + 34;
+        let exit_top=TRAY_ROWS_TOP + 4*38 + TRAY_EXIT_OFFSET;
+        assert_eq!(TRAY_MENU_HEIGHT, 228);
+        assert!(TRAY_ROWS_TOP >= 10);
         assert!(exit_top > about_bottom);
-        assert!(exit_top + 34 < 265);
+        assert!(exit_top + 34 + 12 <= TRAY_MENU_HEIGHT);
     }
     #[test]
     fn update_errors_are_short_and_human_readable() {
