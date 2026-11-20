@@ -1,12 +1,28 @@
-# SwiftTray
 
-A lightweight, native Windows 11 audio flyout built in Rust. Open the per-app
-volume mixer, switch between enabled output devices, and trigger the Windows
-screen-capture overlay without opening a large application window.
+<p align="center">
+<img src="assets/SwiftTray-logo.svg" alt="SwiftTray Logo" width="128"></p>
 
-**Current status: v1.0.0 release candidate (source).** Build and validate on
-Windows 11 before creating a public `v1.0.0` tag. This archive is not a
-precompiled or signed Windows release.
+<h1 align="center">SwiftTray</h1>
+
+<p align="center">
+  A lightweight, native audio utility for Windows 11, built with Rust.
+</p>
+
+<p align="center">
+  <a href="https://github.com/Alfe0/SwiftTray/releases/tag/v1.0.0">Download v1.0.0</a> •
+  <a href="CHANGELOG.md">Changelog</a> •
+  <a href="LICENSE">MIT License</a>
+</p>
+
+A lightweight Windows 11 audio flyout built in Rust. Open the per-app
+volume mixer, switch between enabled output devices, and trigger the
+Windows screen-capture overlay without opening a large application window.
+
+**Current status: v1.0.0 officially released.**
+
+Download the latest executable from the
+[GitHub Releases](https://github.com/Alfe0/SwiftTray/releases/latest) page.
+
 
 ## Latest release: v1.0.0
 
