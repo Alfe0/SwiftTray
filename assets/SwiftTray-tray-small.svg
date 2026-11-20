@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<defs><linearGradient id="trayGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#20B27A"/><stop offset="1" stop-color="#149FA3"/></linearGradient><linearGradient id="orbGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1B78DB"/><stop offset="1" stop-color="#2756D6"/></linearGradient></defs>
+<path d="M13 3H45Q50 3 50 8V30Q30 30 30 50H8Q3 50 3 45V13Q3 3 13 3Z" fill="url(#trayGrad)"/>
+<path d="M11.5 22H19L30 14Q33 12.5 33 17V37Q33 40 30 38L19 30H11.5Q9.5 30 9.5 28V24Q9.5 22 11.5 22Z" fill="white"/>
+<path d="M37.8 20Q45 26 37.8 32" stroke="white" stroke-width="5" fill="none" stroke-linecap="round"/>
+<circle cx="46" cy="46" r="17" fill="url(#orbGrad)" stroke="#173C52" stroke-width="1.5"/>
+<rect x="43" y="35" width="6" height="12" rx="3" fill="white"/>
+</svg>
