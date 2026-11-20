@@ -8,7 +8,7 @@ screen-capture overlay without opening a large application window.
 Windows 11 before creating a public `v1.0.0` tag. This archive is not a
 precompiled or signed Windows release.
 
-## v1.0.0 release candidate
+## Latest release: v1.0.0
 
 - Fix colored/pixelated outlines around the four-part logo in About by
   **bypassing Windows HICON conversion for that surface**. A direct 256px
