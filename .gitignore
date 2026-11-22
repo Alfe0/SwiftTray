@@ -1,0 +1,13 @@
+# Rust build artifacts
+/target/
+
+# MSIX build outputs
+**/Output/
+**/Sandbox-Test/
+
+# Signing certificates and keys
+*.pfx
+*.p12
+*.cer
+*.msix
+*.msixbundle

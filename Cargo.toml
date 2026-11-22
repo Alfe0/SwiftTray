@@ -1,6 +1,6 @@
 [package]
 name = "swifttray"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 authors = ["SwiftTray"]
 description = "A lightweight native Windows 11 audio flyout"
