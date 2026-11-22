@@ -43,6 +43,16 @@ jobs:
           path: release/*
           if-no-files-found: error
 
+      - name: Build unsigned MSIX for Store submission review
+        shell: pwsh
+        run: ./packaging/msix/Build-MSIX.ps1 -RepoRoot $PWD.Path -SkipCargo
+      - name: Upload unsigned MSIX (not a public release asset)
+        uses: actions/upload-artifact@v4
+        with:
+          name: SwiftTray-MSIX-unsigned-x64
+          path: packaging/msix/Output/*.msix
+          if-no-files-found: error
+
   publish-release:
     if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
     needs: windows-x64

@@ -1,49 +1,57 @@
-# SwiftTray — MSIX icon assets (source of truth: official SVG)
+# SwiftTray MSIX packaging (Microsoft Store)
 
-This folder contains **visual assets only** generated from `assets/SwiftTray-logo.svg`.
-It is **not** a complete MSIX project: the submitted package's `AppxManifest.xml`,
-original Store identity, signing settings, installer and `resources.pri` are not
-included in the GitHub source ZIP. Do not invent or replace those values.
+The current Store package identity is preserved from the certified 1.0.0.0 package.
+This folder now contains the **build script**, the **manifest template**, and the
+existing checked-in brand assets in `Assets/` (kept unchanged).
 
-## What changed
+## Build locally on Windows
 
-- `assets/SwiftTray.ico` (resource ID **1**) now shows the same four-panel
-  official logo at **every** resolution, including 16–40px, so Windows Explorer,
-  desktop shortcuts and the executable no longer change to a tray design.
-- `assets/SwiftTray-tray.ico` (resource ID **2**) is the **approved** green→teal→blue
-  asymmetric rounded-square tile with a white speaker + two arcs; **no blue knob**.
-  Dedicated 16px and 20–24px optical variants preserve legibility in the notification area.
-  The tray image is deliberately not used for Start, Explorer, MSIX app identity or the taskbar.
-- This `Assets` folder provides app-list/Start/Taskbar `Square44x44Logo`,
-  `Square150x150Logo`, `StoreLogo`, scale variants and 16–256px `targetsize`
-  variants (with `altform-unplated` counterparts).
-- The About artwork still comes from the unmodified official SVG.
+Prerequisites: Rust MSVC toolchain, Windows 10/11 SDK (makepri and makeappx),
+and the project source. From the repository root:
 
-## Integrating into the existing MSIX packaging project
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\packaging\msix\Build-MSIX.ps1 -RepoRoot .
+```
 
-1. Keep the **existing** Partner Center Store package identity: `Identity Name`,
-   `Publisher`, `Application Id`, package signing, and app capabilities.
-2. In the *actual* MSIX project, find `AppxManifest.xml` / `Package.appxmanifest`
-   and identify the resource paths under `Properties > Logo` and
-   `Applications > Application > uap:VisualElements`.
-3. Copy or rename the PNG assets into **that exact existing asset directory**.
-   If it uses new names, update `Logo`, `Square44x44Logo` and
-   `Square150x150Logo` paths to match. Do not assume these filenames already
-   match the previously submitted MSIX.
-4. Package the **newly rebuilt** executable so its main EXE icon uses resource
-   ID 1 and the notification area uses resource ID 2.
-5. Rebuild the package's resource index (`resources.pri`) if your packaging tool
-   requires it; Microsoft's manual flow uses `makepri.exe` after asset changes.
-6. Build and test in Windows 11 before changing the approved Store submission.
-   Check the taskbar, Start/Search, desktop shortcut, Explorer, notification
-   area and About on 100%, 125%, 150% and 200% DPI and both themes.
-7. After successful testing, prepare a **new Store submission** with the
-   correct package version and updated listing pictures where necessary. The
-   approved-but-unpublished submission should not be canceled prematurely.
+The script runs Rust tests and compiles SwiftTray, then stages and creates an **unsigned** MSIX at:
 
-No changes to volume/audio handling, hotkeys, app configuration or startup
-behavior are required for this icon correction.
+`packaging/msix/Output/MohammedAlfehaid.SwiftTray_<version>.0_x64.msix`
 
-Regenerate (designer machine only): `python tools/generate_icons.py`
+`Cargo.toml` is the only source for release versioning (the package version is
+`major.minor.patch.0`). Update `Cargo.toml` and `Cargo.lock` together.
 
-Docs: https://learn.microsoft.com/windows/msix/desktop/desktop-to-uwp-manual-conversion
+## GitHub Actions
+
+The Windows job builds and tests the portable EXE and then invokes the same
+MSIX script with `-SkipCargo` (to reuse the newly built EXE). It uploads an
+**unsigned MSIX artifact** for release review; it does not publish this file
+as a GitHub Release asset and does not submit to Microsoft Store.
+
+The CI pipeline embeds `SWIFTTRAY_GITHUB_REPO` for manual version checks, and
+local builds now use `Alfe0/SwiftTray` too. GitHub version checks do **not**
+replace Store-managed updates.
+
+## Important identity / signing notes
+
+- The package **Name, Publisher, Application Id, x64 architecture, full-trust
+  entry point and executable path** match the original Store package.
+- Do not commit `Output`, any `.msix` outputs, or development certificates.
+- Do not distribute unsigned MSIX files directly to users; Microsoft Store
+  signs packages it distributes.
+- The sandbox self-signed test package and `.cer` are separate test-only files.
+  Do not trust the test certificate on a production Windows installation.
+- `Start with Windows` and update-in-place from the old MSIX still require
+  separate tests. A clean Sandbox install is not proof of in-place update.
+- Keep the current Partner Center submission unchanged until the next release
+  procedure is agreed upon.
+- Before uploading to the Store, review Windows App Certification Kit results.
+
+## Previously existing assets
+
+`packaging/msix/Assets/` remains the single source for MSIX icon images.
+The `assets/SwiftTray.ico` and `assets/SwiftTray-tray.ico` resources are
+separate, optimized variants of the approved unified brand mark.
+
+Useful docs:
+- https://learn.microsoft.com/windows/msix/package/create-app-package-with-makeappx-tool
+- https://learn.microsoft.com/windows/apps/publish/publish-your-app/msix/upload-app-packages
