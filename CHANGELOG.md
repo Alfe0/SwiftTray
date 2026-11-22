@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased] — approved visual identity (pending Windows/MSIX release verification)
+
+- Replace the previous four-panel symbol with the approved interlocking ribbon mark for Explorer, Start, taskbar, About, and Windows package image assets.
+- Use the same mark for System Tray, with 8% optical enlargement inside the tray icon's transparent frame for better legibility at small sizes.
+- Embed app ICO as resource ID 1 and optimized notification-area ICO as resource ID 2; the audio and input behavior are unchanged.
+- Add asset checks to GitHub CI. This source update is not a new signed Store package and does not alter existing v1.0.0 releases.
+
+
 ## [1.0.0] — Release candidate (not yet published)
 
 - Repair high-DPI About logo rendering with direct premultiplied-alpha bitmap

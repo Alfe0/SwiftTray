@@ -23,6 +23,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
+      - name: Validate icon resources
+        run: python tools/verify_icon_assets.py
       - name: Test Rust code
         run: cargo test --release --target x86_64-pc-windows-msvc
       - name: Build portable SwiftTray.exe

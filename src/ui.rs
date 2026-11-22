@@ -1954,14 +1954,14 @@ pub fn run() -> Result<(), String> {
         }
     }
     let mut app=Box::new(App::new(Config::load(),audio));
-    // IMAGE_ICON=1; request the real taskbar size so that our tuned 16/20/24px
-    // ICO frames are used at 100/125/150% scale instead of enlarging 16px.
+    // IMAGE_ICON=1; tray-only resource ID 2 uses purpose-designed tiny frames
+    // at 100/125/150% scaling; resource ID 1 remains the full app logo.
     let tray_size=tray_icon_pixels(unsafe {GetDpiForSystem()});
-    let small=unsafe {LoadImageW(instance,1usize as *const u16,1,tray_size,tray_size,0)};
+    let small=unsafe {LoadImageW(instance,2usize as *const u16,1,tray_size,tray_size,0)};
     app.tray_owned=small!=0;
     app.tray_icon=if small!=0 {small}else{icon};
     // The 230-DIP context menu needs a 32px source, not an enlarged 16px HICON.
-    let menu_icon=unsafe {LoadImageW(instance,1usize as *const u16,1,32,32,0)};
+    let menu_icon=unsafe {LoadImageW(instance,2usize as *const u16,1,32,32,0)};
     app.tray_menu_icon=if menu_icon!=0 {menu_icon}else{app.tray_icon};
     // About uses a dedicated 256px PArgb raster embedded directly from the
     // original SVG, not GdipCreateBitmapFromHICON (which distorted its edges).

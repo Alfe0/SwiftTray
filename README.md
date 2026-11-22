@@ -24,6 +24,17 @@ Download the latest executable from the
 [GitHub Releases](https://github.com/Alfe0/SwiftTray/releases/latest) page.
 
 
+## Upcoming visual identity refresh (not yet released)
+
+The refined interlocking-ribbon logo has been approved visually on Windows 11.
+The app icon, About artwork, and dedicated notification-area icon use the same symbol.
+Only the notification-area ICO is optically enlarged by 8% for small-size clarity.
+
+This repository snapshot includes the approved image resources and the minimal
+Win32 resource wiring needed for them. **It is not yet a Store release**: a
+Windows build/test and integration with the original MSIX manifest are still
+required. See [`OFFICIAL_VISUAL_UPDATE_AR.md`](OFFICIAL_VISUAL_UPDATE_AR.md).
+
 ## Latest release: v1.0.0
 
 - Fix colored/pixelated outlines around the four-part logo in About by
