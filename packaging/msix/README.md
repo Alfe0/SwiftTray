@@ -17,8 +17,9 @@ The script runs Rust tests and compiles SwiftTray, then stages and creates an **
 
 `packaging/msix/Output/MohammedAlfehaid.SwiftTray_<version>.0_x64.msix`
 
-`Cargo.toml` is the only source for release versioning (the package version is
-`major.minor.patch.0`). Update `Cargo.toml` and `Cargo.lock` together.
+`tools/Prepare-Release.ps1 -Version 1.0.X -Apply` synchronizes Cargo, lockfile,
+MSIX manifest and README source version. The MSIX version is `major.minor.patch.0`.
+Before publishing, `tools/Assert-Release-Version.ps1 -Tag v1.0.X` verifies consistency.
 
 ## GitHub Actions
 

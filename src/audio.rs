@@ -20,7 +20,7 @@ use windows::{
 
 #[link(name = "ole32")]
 extern "system" {
-    fn CoTaskMemFree(ptr: *const c_void);
+    fn CoTaskMemFree(ptr: *mut c_void);
     fn CoCreateInstance(
         clsid: *const GUID, outer: *mut c_void, ctx: u32,
         iid: *const GUID, object: *mut *mut c_void,
@@ -425,7 +425,10 @@ fn set_default_output(id: &str) -> Result<(), String> {
     let wide: Vec<u16> = id.encode_utf16().chain(Some(0)).collect();
     let mut error = None;
     unsafe {
-        for role in 0..=2 {
+        // eConsole (0) and eMultimedia (1) follow the selected output.
+        // Keep eCommunications (2) untouched: wireless headsets often expose
+        // separate Game and Chat render devices, and changing Chat breaks calls.
+        for role in 0..=1 {
             let result = ((*(*policy).vtable).set_default_endpoint)(policy, wide.as_ptr(), role);
             if result < 0 { error = Some(format!("Cannot change output: 0x{:08X}", result as u32)); break; }
         }

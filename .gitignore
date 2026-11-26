@@ -11,3 +11,6 @@
 *.cer
 *.msix
 *.msixbundle
+# Local experimental executable output
+/dist/
+/target-experimental/

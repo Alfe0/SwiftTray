@@ -52,8 +52,62 @@ fn open_key(access: u32, create: bool) -> Result<Option<OpenKey>, String> {
     else { Err(format!("Windows startup registry error: {result}")) }
 }
 
+// Windows Store MSIX has package identity and must use the declared StartupTask.
+// Portable GitHub builds retain the per-user Run value; these paths must not mix.
+const PACKAGE_NAME: &str = "mohammedalfehaid.swifttray_";
+const TASK_ID: &str = "SwiftTrayStartup";
+#[link(name = "kernel32")]
+extern "system" {
+    fn GetCurrentPackageFullName(length: *mut u32, name: *mut u16) -> i32;
+}
+
+pub fn is_store_install() -> bool {
+    let mut length = 0u32;
+    let status = unsafe { GetCurrentPackageFullName(&mut length, ptr::null_mut()) };
+    if status != 122 || length == 0 || length > 4096 { return false; }
+    let mut data = vec![0u16; length as usize];
+    if unsafe { GetCurrentPackageFullName(&mut length, data.as_mut_ptr()) } != 0 { return false; }
+    String::from_utf16_lossy(&data).to_ascii_lowercase().starts_with(PACKAGE_NAME)
+}
+
+fn packaged_task() -> Result<windows::ApplicationModel::StartupTask, String> {
+    use windows::{ApplicationModel::StartupTask, core::HSTRING};
+    StartupTask::GetAsync(&HSTRING::from(TASK_ID))
+        .map_err(|e| format!("StartupTask not registered in this MSIX: {e}"))?
+        .join().map_err(|e| format!("Could not read Windows startup state: {e}"))
+}
+
+fn packaged_is_enabled() -> Result<bool, String> {
+    use windows::ApplicationModel::StartupTaskState;
+    let state = packaged_task()?.State().map_err(|e| e.to_string())?;
+    Ok(state == StartupTaskState::Enabled || state == StartupTaskState::EnabledByPolicy)
+}
+
+fn packaged_set_enabled(enabled: bool) -> Result<(), String> {
+    use windows::ApplicationModel::StartupTaskState;
+    let task = packaged_task()?;
+    let state = task.State().map_err(|e| e.to_string())?;
+    if enabled {
+        if state == StartupTaskState::Enabled || state == StartupTaskState::EnabledByPolicy { return Ok(()); }
+        if state == StartupTaskState::DisabledByUser {
+            return Err("Windows disabled SwiftTray in Startup apps. Enable it there first.".into());
+        }
+        if state == StartupTaskState::DisabledByPolicy {
+            return Err("Your Windows policy prevents startup apps.".into());
+        }
+        let new_state = task.RequestEnableAsync()
+            .map_err(|e| format!("Could not request startup permission: {e}"))?
+            .join().map_err(|e| format!("Windows denied startup permission: {e}"))?;
+        if new_state == StartupTaskState::Enabled || new_state == StartupTaskState::EnabledByPolicy { Ok(()) }
+        else { Err("Windows did not enable startup. Check Settings > Apps > Startup.".into()) }
+    } else {
+        task.Disable().map_err(|e| format!("Could not disable startup: {e}"))
+    }
+}
+
 /// True only if the registered startup entry points to the currently running EXE.
 pub fn is_enabled() -> bool {
+    if is_store_install() { return packaged_is_enabled().unwrap_or(false); }
     let Ok(Some(key)) = open_key(KEY_QUERY_VALUE, false) else { return false; };
     let name = wide(ENTRY);
     let mut bytes = 0u32;
@@ -75,6 +129,7 @@ pub fn is_enabled() -> bool {
 }
 
 pub fn set_enabled(enabled: bool) -> Result<(), String> {
+    if is_store_install() { return packaged_set_enabled(enabled); }
     let name = wide(ENTRY);
     if enabled {
         let command = wide(&current_command()?);

@@ -39,6 +39,12 @@ pub fn repository_url() -> Option<String> {
 
 pub fn is_configured() -> bool { REPO.is_some_and(valid_repo) }
 
+/// Experimental builds may check the public release metadata, but can never
+/// replace themselves or any installed copy of SwiftTray.
+pub fn is_experimental_build() -> bool {
+    option_env!("SWIFTTRAY_EXPERIMENTAL_BUILD").is_some()
+}
+
 fn release_url_valid(url: &str, repo: &str) -> bool {
     url.to_ascii_lowercase().starts_with(&format!("https://github.com/{repo}/releases/tag/").to_ascii_lowercase())
         && url.bytes().all(|b| b.is_ascii_graphic() && b != b'\\' && b != b'"')
@@ -71,6 +77,81 @@ pub fn check_latest() -> Result<ResultState, String> {
         Ok(ResultState::Available{version:release.tag_name,url:release.html_url})
     } else {
         Ok(ResultState::Current{version:CURRENT.to_string()})
+    }
+}
+
+/// Start a separate, locally embedded updater for a portable executable.
+/// The helper downloads the EXE and checksum from this project's GitHub Release,
+/// verifies SHA256, requests graceful shutdown, then replaces/restarts the EXE.
+/// Never call this for packaged Store installations.
+#[cfg(windows)]
+pub struct UpdateProcess {
+    child: std::process::Child,
+    helper: std::path::PathBuf,
+    error_file: std::path::PathBuf,
+}
+
+#[cfg(windows)]
+pub fn install_portable_update(tag: &str, main_window: isize) -> Result<UpdateProcess, String> {
+    use std::{fs, process::Command, os::windows::process::CommandExt};
+    if is_experimental_build() {
+        return Err("Automatic installation is disabled in experimental builds".into());
+    }
+    if crate::startup::is_store_install() {
+        return Err("Store-installed apps must update through Microsoft Store".into());
+    }
+    if REPO != Some("Alfe0/SwiftTray") {
+        return Err("Automatic updates require an official Alfe0/SwiftTray build".into());
+    }
+    if version_tuple(tag).is_none() || !tag.bytes().all(|b| b.is_ascii_alphanumeric() || b==b'.') {
+        return Err("Invalid update tag".into());
+    }
+    let current = std::env::current_exe().map_err(|e|e.to_string())?;
+    let base = std::env::var_os("LOCALAPPDATA").ok_or("LOCALAPPDATA is missing")?;
+    let folder = std::path::PathBuf::from(base).join("SwiftTray").join("updates");
+    fs::create_dir_all(&folder).map_err(|e| format!("Cannot prepare update folder: {e}"))?;
+    // Unique names avoid stale helper scripts or PID reuse overwriting files.
+    let id = format!("{}-{}", std::process::id(),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e|e.to_string())?.as_nanos());
+    let helper = folder.join(format!("apply-{id}.ps1"));
+    let error_file = folder.join(format!("apply-{id}.error.txt"));
+    fs::write(&helper,include_str!("../tools/Apply-Verified-GitHub-Update.ps1"))
+        .map_err(|e|format!("Cannot create updater: {e}"))?;
+    let result = (|| {
+        let powershell = std::env::var_os("SystemRoot")
+            .map(|root| std::path::PathBuf::from(root).join("System32").join("WindowsPowerShell").join("v1.0").join("powershell.exe"))
+            .ok_or("Windows PowerShell location unavailable")?;
+        Command::new(powershell)
+            .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"])
+            .arg(&helper)
+            .arg("-TargetExe").arg(&current)
+            .arg("-AppPid").arg(std::process::id().to_string())
+            .arg("-AppWindow").arg(main_window.to_string())
+            .arg("-Tag").arg(tag)
+            .arg("-ErrorFile").arg(&error_file)
+            .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
+            .spawn().map_err(|e| format!("Could not start updater: {e}"))
+    })();
+    match result {
+        Ok(child) => Ok(UpdateProcess { child, helper, error_file }),
+        Err(error) => { let _=fs::remove_file(helper); Err(error) }
+    }
+}
+
+/// Called on a worker thread. The UI remains responsive if the updater fails
+/// before it can close SwiftTray. On success, the updater relaunches the EXE.
+#[cfg(windows)]
+pub fn wait_for_update(mut process: UpdateProcess) -> Result<(), String> {
+    let exit = process.child.wait();
+    let detail = std::fs::read_to_string(&process.error_file).ok();
+    let _ = std::fs::remove_file(&process.error_file);
+    let _ = std::fs::remove_file(&process.helper);
+    match exit {
+        Ok(status) if status.success() => Ok(()),
+        Ok(status) => Err(detail.filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(||format!("Updater exited with code {:?}", status.code()))),
+        Err(error) => Err(format!("Could not monitor updater: {error}")),
     }
 }
 

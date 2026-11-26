@@ -23,12 +23,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
+      # A malformed or mismatched tag must fail before ANY release artifacts exist.
+      - name: Validate stable release tag and metadata
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: ./tools/Assert-Release-Version.ps1 -Tag $env:GITHUB_REF_NAME
       - name: Validate icon resources
         run: python tools/verify_icon_assets.py
       - name: Test Rust code
-        run: cargo test --release --target x86_64-pc-windows-msvc
+        run: cargo test --locked --release --target x86_64-pc-windows-msvc
       - name: Build portable SwiftTray.exe
-        run: cargo build --release --target x86_64-pc-windows-msvc
+        run: cargo build --locked --release --target x86_64-pc-windows-msvc
       - name: Stage executable and checksum
         shell: pwsh
         run: |
@@ -70,4 +75,8 @@ jobs:
           files: |
             release/SwiftTray.exe
             release/SwiftTray.sha256
+          # An owner must review and publish the draft explicitly. Drafts are not
+          # returned by GitHub's /releases/latest endpoint.
+          draft: true
+          prerelease: false
           generate_release_notes: true

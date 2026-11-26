@@ -2,7 +2,7 @@
 
 #[cfg(not(windows))]
 fn main() {
-    eprintln!("SwiftTray is a native Windows 11 application. Build it on Windows.");
+    eprintln!("SwiftTray is a native Windows 10/11 application. Build it on Windows.");
 }
 
 #[cfg(windows)]
@@ -19,6 +19,8 @@ mod hotkeys;
 mod icons;
 #[cfg(windows)]
 mod native;
+#[cfg(windows)]
+mod platform;
 #[cfg(windows)]
 mod singleton;
 #[cfg(windows)]

@@ -2,11 +2,12 @@
 <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
          xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
          xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-         IgnorableNamespaces="uap rescap">
+         xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+         IgnorableNamespaces="uap rescap desktop">
   <!-- Store identity and app ID verified against original certified 1.0.0.0 package. -->
   <Identity Name="MohammedAlfehaid.SwiftTray"
             Publisher="CN=AF51EB05-4F62-4CEA-A009-91A47BA6CFD5"
-            Version="1.0.1.0"
+            Version="1.0.2.0"
             ProcessorArchitecture="x64" />
   <Properties>
     <DisplayName>SwiftTray</DisplayName>
@@ -32,6 +33,13 @@
                           BackgroundColor="transparent"
                           Square150x150Logo="Assets\Square150x150Logo.png"
                           Square44x44Logo="Assets\Square44x44Logo.png" />
+      <Extensions>
+        <desktop:Extension Category="windows.startupTask"
+                           Executable="VFS\ProgramFilesX64\SwiftTray\SwiftTray.exe"
+                           EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="SwiftTrayStartup" Enabled="false" DisplayName="SwiftTray" />
+        </desktop:Extension>
+      </Extensions>
     </Application>
   </Applications>
   <Capabilities>

@@ -20,6 +20,7 @@ const TIMER_SLIDER: usize = 3;
 const TIMER_APP_TOOLTIP: usize = 5;
 const TIMER_METER: usize = 6;
 const TIMER_HOTKEY_RETRY: usize = 7;
+const MSG_UPDATE_QUIT: u32 = WM_APP + 42;
 const TIMER_UPDATE_RESULT: usize = 8;
 const SYSTEM_ICON: *const u16 = 32512usize as *const u16;
 const ARROW_CURSOR: *const u16 = 32512usize as *const u16;
@@ -52,7 +53,7 @@ enum Action {
 struct Hit { rect: Rect, action: Action }
 
 enum UpdateStatus {
-    Idle, Checking, Unconfigured, Current(String),
+    Idle, Checking, Unconfigured, StoreManaged, Installing, Current(String),
     Available { version:String, url:String }, Error(String),
 }
 
@@ -72,6 +73,7 @@ struct App {
     github_image:isize, github_pixels:Vec<u8>, taskbar_created:u32, tray_choice:usize,
     startup_on:bool, startup_error:String,
     update_status:UpdateStatus, update_receiver:Option<Receiver<Result<updates::ResultState,String>>>,
+    update_install_receiver:Option<Receiver<Result<(),String>>>,
 }
 impl App {
     fn new(config:Config, audio:Option<Audio>) -> Self {
@@ -88,7 +90,7 @@ impl App {
             tray_image:0, about_image:0, about_pixels:Vec::new(),
             github_image:0, github_pixels:Vec::new(), taskbar_created:0, tray_choice:0,
             startup_on:startup::is_enabled(), startup_error:String::new(),
-            update_status:UpdateStatus::Idle, update_receiver:None }
+            update_status:UpdateStatus::Idle, update_receiver:None, update_install_receiver:None }
     }
     fn s(&self,v:i32)->i32 { scaled(v,self.dpi) }
     fn workarea(&self)->Rect {
@@ -370,7 +372,14 @@ impl App {
         }
     }
     fn begin_update_check(&mut self) {
-        if matches!(&self.update_status,UpdateStatus::Checking) {return;}
+        if startup::is_store_install() {
+            self.update_status=UpdateStatus::StoreManaged;
+            self.open_url("ms-windows-store://downloadsandupdates");
+            self.repaint();
+            return;
+        }
+        // Do not spawn a second check or installer while one is in progress.
+        if matches!(&self.update_status,UpdateStatus::Checking|UpdateStatus::Installing) {return;}
         // Local builds have no repository until the owner configures one.
         // Report this as a neutral setup state, not a fatal red error.
         if !updates::is_configured() {
@@ -389,6 +398,24 @@ impl App {
         self.repaint();
     }
     fn receive_update_result(&mut self) {
+        // An updater may finish unsuccessfully before it closes the app.
+        // Watch its real exit status instead of resetting a fixed timeout.
+        if let Some(receiver)=&self.update_install_receiver {
+            let finished=match receiver.try_recv() {
+                Ok(Ok(()))=>Some(UpdateStatus::Idle),
+                Ok(Err(error))=>Some(UpdateStatus::Error(error)),
+                Err(mpsc::TryRecvError::Disconnected)=>
+                    Some(UpdateStatus::Error("Updater ended unexpectedly".into())),
+                Err(mpsc::TryRecvError::Empty)=>None,
+            };
+            if let Some(status)=finished {
+                self.update_status=status;
+                self.update_install_receiver=None;
+                unsafe {KillTimer(self.window,TIMER_UPDATE_RESULT);}
+                self.repaint();
+            }
+            return;
+        }
         let result=self.update_receiver.as_ref().map(|rx|rx.try_recv());
         let state=match result {
             Some(Ok(Ok(updates::ResultState::Current{version})))=>Some(UpdateStatus::Current(version)),
@@ -399,9 +426,29 @@ impl App {
             _=>None,
         };
         if let Some(state)=state {
-            unsafe {KillTimer(self.window,TIMER_UPDATE_RESULT);}
             self.update_receiver=None;
-            self.update_status=state;
+            self.update_status=match state {
+                // Experimental builds can inspect the official release but must
+                // NEVER attempt to overwrite themselves with the public EXE.
+                available @ UpdateStatus::Available{..} if updates::is_experimental_build()=>available,
+                UpdateStatus::Available{ref version,..} if !startup::is_store_install()=>{
+                    match updates::install_portable_update(version,self.window) {
+                        Ok(process)=>{
+                            let (tx,rx)=mpsc::channel();
+                            self.update_install_receiver=Some(rx);
+                            std::thread::spawn(move || {
+                                let _=tx.send(updates::wait_for_update(process));
+                            });
+                            UpdateStatus::Installing
+                        },
+                        Err(error)=>UpdateStatus::Error(error),
+                    }
+                }
+                other=>other,
+            };
+            if self.update_install_receiver.is_none() {
+                unsafe {KillTimer(self.window,TIMER_UPDATE_RESULT);}
+            }
             self.repaint();
         }
     }
@@ -545,8 +592,29 @@ impl App {
             Action::TrayCheckUpdates=>{self.show();self.go(Page::About);self.begin_update_check();},
             Action::CheckUpdates=>self.begin_update_check(),
             Action::OpenUpdateRelease=>{
-                if let UpdateStatus::Available{url,..}=&self.update_status {
-                    let url=url.clone();self.open_url(&url);
+                // Experimental builds may inspect releases, but cannot install them.
+                // Keep this click path consistent with the automatic-install path.
+                if !updates::is_experimental_build() {
+                    if let UpdateStatus::Available{version,..}=&self.update_status {
+                        let tag=version.clone();
+                        match updates::install_portable_update(&tag,self.window) {
+                            Ok(process)=>{
+                                let (tx,rx)=mpsc::channel();
+                                self.update_install_receiver=Some(rx);
+                                self.update_status=UpdateStatus::Installing;
+                                std::thread::spawn(move || {
+                                    let _=tx.send(updates::wait_for_update(process));
+                                });
+                                unsafe { SetTimer(self.window,TIMER_UPDATE_RESULT,150,0); }
+                                self.status="Update download started. SwiftTray will restart after verification.".into();
+                            },
+                            Err(error)=>{
+                                self.status=error.clone();
+                                self.update_status=UpdateStatus::Error(error);
+                            },
+                        }
+                        self.repaint();
+                    }
                 }
             },
             Action::OpenRepository=>{
@@ -761,13 +829,17 @@ impl Canvas {
             CreateFontW(-scaled(size,dpi),0,0,0,weight,0,0,0,1,0,0,5,0,wide(name).as_ptr())
         };
         unsafe {SetBkMode(dc,TRANSPARENT);}
-        Self {dc,dpi,theme,base_font:font("Segoe UI Variable Text",12,400),
-            small_font:font("Segoe UI Variable Text",11,400),
-            bold_font:font("Segoe UI Variable Text",12,600),
-            icon_font:font("Segoe Fluent Icons",18,400),
-            large_icon_font:font("Segoe Fluent Icons",21,400),
-            tiny_icon_font:font("Segoe Fluent Icons",11,400),
-            title_font:font("Segoe UI Variable Display",15,650),
+        // Preserve the existing Fluent appearance on Windows 11, but select
+        // native Windows 10 fonts so common icon glyphs render as icons,
+        // not missing-character squares (Segoe Fluent Icons is absent there).
+        let families=crate::platform::ui_fonts();
+        Self {dc,dpi,theme,base_font:font(families.text,12,400),
+            small_font:font(families.text,11,400),
+            bold_font:font(families.text,12,600),
+            icon_font:font(families.icons,18,400),
+            large_icon_font:font(families.icons,21,400),
+            tiny_icon_font:font(families.icons,11,400),
+            title_font:font(families.title,15,650),
             smooth:smooth::SmoothCanvas::new(dc)}
     }
     fn s(&self,v:i32)->i32 {scaled(v,self.dpi)}
@@ -1162,7 +1234,7 @@ fn draw_mixer(app:&mut App,c:&Canvas,_a:u32) {
     if count>app.page_size() {
         let y=first+(snapshot.len() as i32+1)*ROW_HEIGHT;
         let remaining=count.saturating_sub((app.page_offset+app.page_size()).min(count));
-        c.text(&if remaining==0 {"Back to first apps".to_owned()} else {format!("{remaining} more apps")},
+        c.text(&if remaining==0 {"Back to first apps".to_owned()} else {format!("{remaining} more {}", if remaining==1 {"app"} else {"apps"})},
             Rect::new(20,y+2,WIDTH-80,29),c.theme.accent,1,0);
         c.symbol("\u{E76C}",Rect::new(WIDTH-49,y+3,23,25),c.theme.accent);
         app.add_hit(Rect::new(16,y,WIDTH-32,35),Action::NextApps);
@@ -1453,6 +1525,8 @@ fn friendly_update_error(message:&str)->&'static str {
         "GitHub rate limit reached. Try later."
     } else if message.contains("unsupported version") || message.contains("invalid version") {
         "Release version could not be read"
+    } else if message.contains("Updater") || message.contains("SwiftTray update failed") {
+        "Update failed. See update-error.txt"
     } else {
         "Could not check updates. Try again."
     }
@@ -1474,8 +1548,11 @@ fn draw_about(app:&mut App,c:&Canvas) {
     // Text + icon only. No button surface, border, or background on hover.
     let check=Rect::new(49,272,WIDTH-98,37);
     let highlight=app.hover==Some(Action::CheckUpdates);
-    let checking=matches!(&app.update_status,UpdateStatus::Checking);
-    let label=if checking {"Checking for updates..."} else {"Check for updates"};
+    let checking=matches!(&app.update_status,UpdateStatus::Checking|UpdateStatus::Installing);
+    let label=if matches!(&app.update_status,UpdateStatus::Installing) {"Installing update..."}
+        else if checking {"Checking for updates..."}
+        else if startup::is_store_install() {"Open Store"}
+        else {"Check for updates"};
     let label_width=c.measure_small_text(label).clamp(95,223);
     let total_width=label_width+30;
     let x=(WIDTH-total_width)/2;
@@ -1492,15 +1569,27 @@ fn draw_about(app:&mut App,c:&Canvas) {
     match &app.update_status {
         UpdateStatus::Unconfigured=>c.text("Update source not configured",
             status_rect,c.theme.dim,1,DT_CENTER),
-        UpdateStatus::Current(version)=>c.text(&format!("You're up to date (v{version})"),
+        UpdateStatus::StoreManaged=>c.text("Updates are managed by Microsoft Store",
+            status_rect,c.theme.dim,1,DT_CENTER),
+        UpdateStatus::Installing=>c.text("Downloading verified update...",
             status_rect,c.theme.accent,1,DT_CENTER),
-        UpdateStatus::Available{version,..}=>c.text(&format!("Update {version} available - View release"),
-            status_rect,c.theme.accent,1,DT_CENTER),
+        UpdateStatus::Current(version)=>{
+            let label=if updates::is_experimental_build() {
+                format!("Test build: release v{version} (no install)")
+            } else {format!("You're up to date (v{version})")};
+            c.text(&label,status_rect,c.theme.accent,1,DT_CENTER);
+        },
+        UpdateStatus::Available{version,..}=>{
+            let label=if updates::is_experimental_build() {
+                format!("Release {version} (test: no install)")
+            } else {format!("Update {version} available - Install now")};
+            c.text(&label,status_rect,c.theme.accent,1,DT_CENTER);
+        },
         UpdateStatus::Error(message)=>c.text(friendly_update_error(message),
             status_rect,c.theme.dim,1,DT_CENTER),
         _=>{},
     }
-    if matches!(&app.update_status,UpdateStatus::Available{..}) {
+    if !updates::is_experimental_build() && matches!(&app.update_status,UpdateStatus::Available{..}) {
         app.add_hit(Rect::new(20,308,WIDTH-40,29),Action::OpenUpdateRelease);
     }
 
@@ -1554,7 +1643,7 @@ fn draw_tray_menu(app:&mut App,c:&Canvas) {
     // "SwiftTray" tooltip already identify the application.
     let choices=[("Open mixer","\u{E767}",Action::TrayOpen),
         ("Settings","\u{E713}",Action::TraySettings),
-        ("Check for updates","\u{E895}",Action::TrayCheckUpdates),
+        (if startup::is_store_install() {"Open Store updates"} else {"Check for updates"},"\u{E895}",Action::TrayCheckUpdates),
         ("About","\u{E946}",Action::TrayAbout),
         ("Exit","\u{E7E8}",Action::TrayExit)];
     for (i,(label,glyph,action)) in choices.into_iter().enumerate() {
@@ -1629,6 +1718,12 @@ unsafe extern "system" fn window_proc(hwnd:H,msg:u32,w:usize,l:isize)->isize {
                 app.capture_session.finish(app.window);
                 app.capture_error(error);
             }
+            return 0;
+        },
+        MSG_UPDATE_QUIT=>{
+            // Only the updater posts this after verifying GitHub's release checksum.
+            DestroyWindow(app.toast);
+            DestroyWindow(app.window);
             return 0;
         },
         WM_HOTKEY=>{
